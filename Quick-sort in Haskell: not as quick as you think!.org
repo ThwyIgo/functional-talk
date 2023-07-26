@@ -1,0 +1,161 @@
+# -*- ispell-local-dictionary: "english"; -*-
+#+TITLE: Quick-sort in Haskell: not as quick as you think!
+#+AUTHOR: ThwyIgo
+#+DATE: <2023-07-26 qua>
+#+LANGUAGE: en
+
+* Haskell is a beautiful language
+When I was just starting to learn Haskell, I found this:
+
+#+begin_src haskell
+quicksort :: Ord a => [a] -> [a]
+quicksort [] = []
+quicksort (p:xs) = lesser ++ [p] ++ greater
+  where
+    lesser = quicksort $ filter (< p) xs
+    greater = quicksort $ filter (>= p) xs
+
+quicksort [2,7,4,2,0,34,23,8,6]
+#+end_src
+
+Which yields
+: [0,2,2,4,6,7,8,23,34]
+
+I didn't know much about sorting algorithms back then, but I had already tried
+to understand quick-sort with no success. The code above is so clear that when I
+first saw it, I immediately understood the foundation of the algorithm; in about
+20 seconds I learned what I was struggling with for more than 2 days.
+
+Clean and beautiful code snippets like ~factorial x = product [2..x]~ made me so
+exited that Haskell became my favorite language.
+
+* The problem
+Poor me who was too naive to realize that this quicksort algorithm is not
+efficient at all.
+
+If you're an experienced programmer, you probably have noticed that the list is
+filtered twice, so it should be O(2n)... But in Haskell it gets even worse,
+because [[https://hackage.haskell.org/package/base-4.18.0.0/docs/Prelude.html#v:-43--43-][the ~++~ function is O(n)]] where 'n' is the length of the list on the lhs
+of ~++~. Assuming half the elements fall into ~lesser~, this gives a time
+complexity of approximately O(5n/2) *for each recursive call*, resulting in
+O(5n/2 log n).
+
+Beyond that, it is impossible to assume that the compiler will be smart enough
+to not duplicate the list multiple times across function calls.
+
+* The solution
+The method to fix this is... /complicated/.
+
+** [[https://wiki.haskell.org/Monad/ST][ST Monad]]
+Making in-place algorithms in Haskell is hard due to its immutable nature. If a
+function takes a list as an argument and returns a modified list, the returned
+value isn't the same input list, but a completely new one; there's no such thing
+as /modifying/ a value in Haskell.
+
+Except for the ST Monad! It is a datatype that exposes read-write memory to us.
+It is completely against functional programming principles, but we just need it
+for IRL algorithms. Unfortunately it means that the algorithm will become a
+little more imperative.
+
+** The glorious in-place O(n log n) Haskell quick-sort
+So... I just +stole+ translated the C++ code from [[https://www.programiz.com/dsa/quick-sort][here]] to Haskell. It should be
+easy to understand. The new thing with the ST Monad is that we can declare
+"pointers" to memory with ~newSTRef~. I made some comments referencing C++
+syntax to help.
+
+#+begin_src haskell
+import Control.Monad (when, forM_)
+import Control.Monad.ST (ST, runST)
+import Data.STRef (newSTRef, modifySTRef', readSTRef)
+import Data.Array.ST (STArray, newListArray, readArray, writeArray, getElems)
+import Data.List (length)
+
+quicksort :: Ord a => [a] -> [a]
+quicksort xs = runST $ do
+    let n = length xs
+    -- New array from xs with 0 as the lowest index and n-1 as the highest
+    arr <- newListArray (0, n-1) xs
+    quicksort' arr 0 (n-1)
+    -- Convert array back to a list
+    getElems arr
+
+quicksort' :: Ord a
+           => STArray s Int a -- Array of a, where indexes are Int
+           -> Int -- Lower bound index
+           -> Int -- High bound index
+           -> ST s () -- Returns nothing, but we need to specify the ST monad,
+                      -- similar to IO ()
+quicksort' arr lo hi
+  | lo < hi = do
+      -- all elements to the left of p are smaller than arr[p]
+      -- all elements to the right of p are greater than arr[p]
+      p <- partition arr lo hi
+      quicksort' arr lo (p - 1)
+      quicksort' arr (p + 1) hi
+  | otherwise = return ()
+
+partition :: Ord a
+          => STArray s Int a -- Array
+          -> Int -- Lower bound index
+          -> Int -- High bound index
+          -> ST s Int -- Pivot's last index
+partition arr lo hi = do
+  -- Pivot is alwaysthe value of the last element
+  pivot <- readArray arr hi -- pivot = arr[hi]
+  -- Pointer for greater element
+  ip <- newSTRef (lo - 1) -- int *i = new int(lo-1) // ip aka "i pointer"
+  -- for (int j=lo; j<hi; j++)
+  forM_ [lo..hi-1] $ \j -> do
+    aj <- readArray arr j -- aj = arr[j]
+    when (aj <= pivot) $ do
+      modifySTRef' ip (+1) -- i++
+      i <- readSTRef ip -- int i = *ip
+      swap arr i j -- swap(arr[i], arr[j])
+
+  i <- (+1) <$> readSTRef ip -- int i = 1 + *ip
+  swap arr i hi
+  return i
+
+swap :: STArray s Int a -> Int -> Int -> ST s ()
+swap arr i j
+  | i == j = return ()
+  | otherwise = do
+      vi <- readArray arr i
+      vj <- readArray arr j
+      writeArray arr i vj
+      writeArray arr j vi
+
+main = print $ quicksort [2,7,4,2,0,34,23,8,6]
+#+end_src
+
+: ghci> [0,2,2,4,6,7,8,23,34]
+
+** Benchmark
+Compiling both versions of quick-sort with ~-O2~ and running the algorithms in
+bash with 1314 Ints.
+: time ./quicksort < nums.txt > /dev/null
+
+|      | Clean code | ST Monad |
+|------+------------+----------|
+| real | 0m0,009s   | 0m0,008s |
+| user | 0m0,003s   | 0m0,002s |
+| sys  | 0m0,006s   | 0m0,006s |
+
+It's a little faster! LOL.
+I'm just too lazy to do a real benchmark, sorry.
+
+* Conclusion
+If you're new to Haskell, you might be wondering: "Well, if I need to make
+imperative code in Haskell, than what's the point of using it?", and if your
+entire code base consists of advanced and frequent used algorithms, you're
+absolutely right.
+
+The thing is that a lot of the times we just consume these algorithms from a
+library and code higher level stuff, and for this situation Haskell is awesome
+because of it's beautiful syntax, type safe system, easy multithreading and
+more!
+
+Finally, was this article useful? Probably not... The clean quick-sort
+implementation is good enough for most situations since it is also O(n log n),
+just like the ST monad version, it's just a slower O(n log n). I wrote this just
+to motivate you to learn the ST Monad, I hope it worked.
