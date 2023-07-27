@@ -33,15 +33,15 @@ exited that Haskell became my favorite language.
 Poor me who was too naive to realize that this quicksort algorithm is not
 efficient at all.
 
-If you're an experienced programmer, you probably have noticed that the list is
-filtered twice, so it should be O(2n)... But in Haskell it gets even worse,
-because [[https://hackage.haskell.org/package/base-4.18.0.0/docs/Prelude.html#v:-43--43-][the ~++~ function is O(n)]] where 'n' is the length of the list on the lhs
-of ~++~. Assuming half the elements fall into ~lesser~, this gives a time
-complexity of approximately O(5n/2) *for each recursive call*, resulting in
-O(5n/2 log n).
+It is a O(n log n) algorithm, but if you're an experienced programmer, you
+probably have noticed that the list is filtered twice, so it should be O(2n)...
+But in Haskell it gets even worse, because [[https://hackage.haskell.org/package/base-4.18.0.0/docs/Prelude.html#v:-43--43-][the ~++~ function is O(n)]] where 'n'
+is the length of the list on the lhs of ~++~. Assuming half the elements fall
+into ~lesser~, this gives a time complexity of approximately O(5n/2) *for each
+recursive call*, resulting in O(5n/2 log n).
 
-Beyond that, it is impossible to assume that the compiler will be smart enough
-to not duplicate the list multiple times across function calls.
+Beyond that, we can't assume that the compiler will be smart enough to not
+duplicate the list multiple times across function calls.
 
 * The solution
 The method to fix this is... /complicated/.
@@ -131,18 +131,20 @@ main = print $ quicksort [2,7,4,2,0,34,23,8,6]
 : ghci> [0,2,2,4,6,7,8,23,34]
 
 ** Benchmark
-Compiling both versions of quick-sort with ~-O2~ and running the algorithms in
-bash with 1314 Ints.
-: time ./quicksort < nums.txt > /dev/null
+Compiling both implementations (and also a C version) with ~-O2~ and running the
+algorithms in sh (bash) with 10000 Ints.
 
-|      | Clean code | ST Monad |
-|------+------------+----------|
-| real | 0m0,009s   | 0m0,008s |
-| user | 0m0,003s   | 0m0,002s |
-| sys  | 0m0,006s   | 0m0,006s |
+|      | Clean code | ST Monad | C        |
+|------+------------+----------+----------|
+| real | 0m0,024s   | 0m0,023s | 0m0,003s |
+| user | 0m0,018s   | 0m0,017s | 0m0,002s |
+| sys  | 0m0,005s   | 0m0,006s | 0m0,001s |
 
 It's a little faster! LOL.
-I'm just too lazy to do a real benchmark, sorry.
+As it turns out, GHC is pretty smart with optimizations, the Clean code version
+works well.
+
+You can benchmark it on your own computer too. Run =./quicksort/benchmark.sh=.
 
 * Conclusion
 If you're new to Haskell, you might be wondering: "Well, if I need to make
@@ -150,12 +152,11 @@ imperative code in Haskell, than what's the point of using it?", and if your
 entire code base consists of advanced and frequent used algorithms, you're
 absolutely right.
 
-The thing is that a lot of the times we just consume these algorithms from a
-library and code higher level stuff, and for this situation Haskell is awesome
-because of it's beautiful syntax, type safe system, easy multithreading and
-more!
+The thing is that a lot of times we just consume these algorithms from a library
+and code higher level stuff, and for this situation Haskell is awesome because
+of it's beautiful syntax, type safe system, easy multithreading and more!
 
 Finally, was this article useful? Probably not... The clean quick-sort
 implementation is good enough for most situations since it is also O(n log n),
-just like the ST monad version, it's just a slower O(n log n). I wrote this just
-to motivate you to learn the ST Monad, I hope it worked.
+it's just a slower O(n log n) compared to the ST monad version. I wrote this
+just to motivate you to learn the ST Monad, I hope it worked.
